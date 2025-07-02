@@ -18,10 +18,17 @@ fi
 LAST_TAG_FILE=".last_tag"
 ARCH_TAG_FILE=".last_checked_arch_tag"
 
-# 读取 image 名称和当前 tag
-IMAGE_LINE=$(grep -E '^\s*image:\s*' "$COMPOSE_FILE" | head -n1 | awk '{print $2}')
+# 提取 image 行，并剥离前后空格和引号，兼容单双引号或无引号
+IMAGE_LINE=$(grep -E '^\s*image:\s*' "$COMPOSE_FILE" | head -n1 | sed -E "s/^\s*image:\s*['\"]?([^'\"]+)['\"]?.*/\1/")
+
+# 拆分镜像名和 tag（tag 可能为空）
 IMAGE=$(echo "$IMAGE_LINE" | cut -d':' -f1)
 CURRENT_TAG=$(echo "$IMAGE_LINE" | cut -d':' -f2-)
+
+# 如果没有指定 tag，默认用 "latest"
+if [ "$IMAGE_LINE" = "$IMAGE" ]; then
+  CURRENT_TAG="latest"
+fi
 
 # 自动获取当前平台架构信息
 REQUIRED_ARCH=$(docker version -f '{{.Client.Arch}}')
