@@ -2,9 +2,6 @@
 
 set -e
 
-sudo apt update
-sudo apt install -y jq
-
 # 设置变量：目标文件名和 GitHub 地址
 SCRIPT_NAME="pull-latest.sh"
 GITHUB_RAW_URL="https://github.makkle.com/https://raw.githubusercontent.com/tuosujie/dpl/main/${SCRIPT_NAME}"
@@ -30,6 +27,10 @@ fi
 # 添加执行权限
 chmod +x "$SCRIPT_NAME"
 echo "✅ 下载完成，已赋予执行权限：./$SCRIPT_NAME"
+
+# 安装依赖
+sudo apt update
+sudo apt install -y jq
 
 # 询问是否设置定时任务
 read -rp "🕒 是否设置每天凌晨 3 点自动运行该脚本？[y/N] " yn
