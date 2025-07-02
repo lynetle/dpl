@@ -1,6 +1,20 @@
 #!/bin/bash
 
-COMPOSE_FILE="docker-compose.yml"
+set -e
+
+# 先判断 docker-compose.yml 或 docker-compose.yaml 是否存在
+if [[ ! -f "docker-compose.yml" && ! -f "docker-compose.yaml" ]]; then
+  echo "❌ 当前目录没有找到 docker-compose.yml 或 docker-compose.yaml，脚本退出。"
+  exit 1
+fi
+
+# 如果是 yml 版本的，优先使用 docker-compose.yml，没有则用 docker-compose.yaml
+if [[ -f "docker-compose.yml" ]]; then
+  COMPOSE_FILE="docker-compose.yml"
+else
+  COMPOSE_FILE="docker-compose.yaml"
+fi
+
 LAST_TAG_FILE=".last_tag"
 ARCH_TAG_FILE=".last_checked_arch_tag"
 
@@ -12,6 +26,10 @@ CURRENT_TAG=$(echo "$IMAGE_LINE" | cut -d':' -f2-)
 # 自动获取当前平台架构信息
 REQUIRED_ARCH=$(docker version -f '{{.Client.Arch}}')
 REQUIRED_OS=$(docker version -f '{{.Client.Os}}')
+
+# 获取 Docker Hub 最新 tag（按更新时间排序）
+TAGS_JSON=$(curl -s "https://hub.docker.com/v2/repositories/${IMAGE}/tags?page_size=100")
+LATEST_TAG=$(echo "$TAGS_JSON" | jq -r '.results | sort_by(.last_updated) | reverse | .[0].name')
 
 # 校验 tag 是否成功获取
 if [[ -z "$LATEST_TAG" || "$LATEST_TAG" == "null" ]]; then
