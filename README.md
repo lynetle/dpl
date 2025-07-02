@@ -47,11 +47,11 @@ sudo apt install -y jq
 直接运行：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/tuosujie/dpl/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/lynetle/dpl/main/install.sh)
 ```
 中国访问推荐：
 ```bash
-bash <(curl -fsSL https://github.makkle.com/https://raw.githubusercontent.com/tuosujie/dpl/main/install.sh)
+bash <(curl -fsSL https://github.makkle.com/https://raw.githubusercontent.com/lynetle/dpl/main/install.sh)
 ```
 
 #### 🛠️ 脚本功能
@@ -78,12 +78,12 @@ bash <(curl -fsSL https://github.makkle.com/https://raw.githubusercontent.com/tu
 ####  下载更新脚本
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tuosujie/dpl/main/pull-latest.sh -o pull-latest.sh
+curl -fsSL https://raw.githubusercontent.com/lynetle/dpl/main/pull-latest.sh -o pull-latest.sh
 chmod +x pull-latest.sh
 ```
 中国访问推荐：
 ```bash
-bash <(curl -fsSL https://github.makkle.comhttps://raw.githubusercontent.com/tuosujie/dpl/main/pull-latest.sh -o pull-latest.sh
+bash <(curl -fsSL https://github.makkle.comhttps://raw.githubusercontent.com/lynetle/dpl/main/pull-latest.sh -o pull-latest.sh
 chmod +x pull-latest.sh
 ```
 
