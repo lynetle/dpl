@@ -2,6 +2,9 @@
 
 set -e
 
+sudo apt update
+sudo apt install -y jq
+
 # 设置变量：目标文件名和 GitHub 地址
 SCRIPT_NAME="pull-latest.sh"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/tuosujie/dpl/main/${SCRIPT_NAME}"
