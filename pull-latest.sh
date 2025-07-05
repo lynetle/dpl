@@ -2,6 +2,9 @@
 
 set -e
 
+# 切换到脚本所在目录
+cd "$(dirname "$0")"
+
 # 先判断 docker-compose.yml 或 docker-compose.yaml 是否存在
 if [[ ! -f "docker-compose.yml" && ! -f "docker-compose.yaml" ]]; then
   echo "❌ 当前目录没有找到 docker-compose.yml 或 docker-compose.yaml，脚本退出。"
