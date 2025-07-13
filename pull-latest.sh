@@ -109,22 +109,33 @@ if ! docker pull "${IMAGE}:${LATEST_TAG}"; then
   exit 1
 fi
 
+# 定义 docker compose 启动函数（自动判断使用哪种命令）
+function docker_compose_up() {
+  if command -v docker-compose &>/dev/null; then
+    docker-compose -f "$COMPOSE_FILE" up -d
+  elif command -v docker &>/dev/null && docker compose version &>/dev/null; then
+    docker compose -f "$COMPOSE_FILE" up -d
+  else
+    echo "❌ 找不到 docker-compose 或 docker compose，无法重启服务。"
+    return 1
+  fi
+}
+
 # 备份并更新 compose 文件
 if [[ -f "$COMPOSE_FILE" ]]; then
   cp "$COMPOSE_FILE" "${COMPOSE_FILE}.bak"
   sed -i -E "s|(image:\s*${IMAGE}:)[^\s]+|\1${LATEST_TAG}|" "$COMPOSE_FILE"
-  echo "✅ docker-compose.yml 已更新为使用最新 tag：${LATEST_TAG}"
+  echo "✅ $COMPOSE_FILE 已更新为使用最新 tag：${LATEST_TAG}"
 
   # 重启服务
-  echo "🚀 使用 docker compose 重启服务..."
-  docker compose -f "$COMPOSE_FILE" up -d
-
-  if [[ $? -eq 0 ]]; then
+  echo "🚀 尝试重启服务..."
+  if docker_compose_up; then
     echo "✅ 服务已成功重启，使用镜像：${IMAGE}:${LATEST_TAG}"
     echo "$LATEST_TAG" > "$LAST_TAG_FILE"
   else
-    echo "❌ docker-compose 启动失败，请手动检查日志。"
+    echo "❌ 服务重启失败，请手动检查日志或 docker compose 状态。"
   fi
 else
   echo "⚠️ 找不到 ${COMPOSE_FILE}，无法替换镜像 tag 或重启服务。"
 fi
+
