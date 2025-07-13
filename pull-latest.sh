@@ -2,9 +2,6 @@
 
 set -e
 
-# 切换到脚本所在目录
-cd "$(dirname "$0")"
-
 # 先判断 docker-compose.yml 或 docker-compose.yaml 是否存在
 if [[ ! -f "docker-compose.yml" && ! -f "docker-compose.yaml" ]]; then
   echo "❌ 当前目录没有找到 docker-compose.yml 或 docker-compose.yaml，脚本退出。"
@@ -49,12 +46,40 @@ fi
 
 echo "📌 最新 tag：$LATEST_TAG"
 
-# 跳过重复 tag
-if [[ -f "$LAST_TAG_FILE" ]]; then
-  LAST_TAG=$(cat "$LAST_TAG_FILE")
-  if [[ "$LATEST_TAG" == "$LAST_TAG" ]]; then
-    echo "⏳ 镜像未更新（仍为 $LATEST_TAG），跳过执行。"
+# 定义动态 tag 列表
+DYNAMIC_TAGS=("latest" "beta" "dev" "nightly" "edge" "unstable")
+
+# 判断当前 tag 是否为动态 tag
+is_dynamic_tag=false
+for tag in "${DYNAMIC_TAGS[@]}"; do
+  if [[ "$CURRENT_TAG" == "$tag" ]]; then
+    is_dynamic_tag=true
+    break
+  fi
+done
+
+# 如果是动态 tag（如 latest、beta 等），通过 digest 判断更新
+if [[ "$is_dynamic_tag" == true ]]; then
+  echo "🔍 当前为动态标签（$CURRENT_TAG），通过镜像 digest 检查更新..."
+
+  OLD_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE}:${CURRENT_TAG}" 2>/dev/null || true)
+  docker pull "${IMAGE}:${CURRENT_TAG}" > /dev/null
+  NEW_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE}:${CURRENT_TAG}")
+
+  if [[ "$OLD_DIGEST" == "$NEW_DIGEST" ]]; then
+    echo "⏳ 镜像内容未变（digest 相同），跳过。"
     exit 0
+  fi
+
+  echo "✅ 镜像内容已更新（digest 不同），继续执行..."
+else
+  # 非动态标签：通过 tag 判断是否重复
+  if [[ -f "$LAST_TAG_FILE" ]]; then
+    LAST_TAG=$(cat "$LAST_TAG_FILE")
+    if [[ "$LATEST_TAG" == "$LAST_TAG" ]]; then
+      echo "⏳ 镜像未更新（仍为 $LATEST_TAG），跳过执行。"
+      exit 0
+    fi
   fi
 fi
 
