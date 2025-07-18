@@ -1,21 +1,15 @@
 #!/bin/bash
-# --- Docker 镜像智能更新脚本 (v7.0 - 时序优先版) ---
+# --- Docker 镜像智能更新脚本 (V8.0 - 最终稳健版) ---
 #
-# 功能:
-# 本脚本结合了 v5 的完整更新流程和 v7 的高效 API 查询逻辑。
-# 1. 它会通过 Docker Hub Web API 一次性获取所有标签及其元数据（更新时间、支持的架构等）。
-# 2. 它会先过滤出所有与本机架构兼容的标签。
-# 3. 然后，它将这些兼容的标签按“最后更新时间”进行降序排序。
-# 4. 列表顶部的第一个标签，即为“时间上最新且架构兼容”的版本，并锁定为更新目标。
-# 5. 如果最新版本与当前版本不同，则更新。
-# 6. 如果标签相同，则通过内容指纹(Digest)来判断镜像是否被重新发布过，确保内容也是最新的。
+# 核心思想采纳自经过验证的可靠方案，确保在各种环境下的稳定性。
 #
-# 变更 (v7.0):
-# - [核心升级] 替换为 V7 的查询逻辑，使用 Docker Hub Web API (`/v2/repositories/.../tags`)。
-# - [排序方式] 从版本号排序 (`sort -V`) 升级为按时间戳 (`last_updated`) 排序，更精准。
-# - [性能提升] 原生支持架构过滤，无需对每个标签单独执行 `docker manifest inspect`，速度大幅提升。
-# - [功能完善] 增加了完整的 API 分页处理，确保能查询一个镜像的所有标签。
-# - [代码重构] 移除了 `get_all_tags` 和 `verify_image_architecture` 函数，整合为单一、高效的查找函数。
+# 工作原理:
+# 1. 创建一个临时目录来存储分页的 API 响应。
+# 2. 循环获取 Docker Hub API 的所有标签页。
+# 3. 将每一页的有效数据 (`.results` 数组) 保存为一个独立的 JSON 文件。
+# 4. 使用 `jq -s 'add'` 命令将所有临时文件合并，确保可靠处理大量数据。
+# 5. 在合并后的完整数据中，进行架构筛选和时间排序，找到最新版本。
+# 6. 该方法牺牲了微小的 I/O 性能，换取了在所有情况下的最高级别鲁棒性。
 
 # --- 安全设置 ---
 set -eo pipefail
@@ -24,7 +18,7 @@ set -eo pipefail
 COMPOSE_FILE="./docker-compose.yml"
 
 # --- 2. 初始化与环境检查 ---
-echo "▶️  开始执行 Docker 镜像智能更新脚本 (v7.0 - 时序优先版)..."
+echo "▶️  开始执行 Docker 镜像智能更新脚本 (v8.0 - 最终稳健版)..."
 
 command -v docker >/dev/null 2>&1 || { echo >&2 "❌ 错误: 'docker' 命令未找到。请先安装 Docker。"; exit 1; }
 command -v curl >/dev/null 2>&1 || { echo >&2 "❌ 错误: 'curl' 命令未找到。请安装 curl。"; exit 1; }
@@ -50,13 +44,21 @@ docker_compose_cmd() {
 
 get_remote_digest() {
     local full_image=$1
-    local image_repo; image_repo=$(echo "$full_image" | cut -d: -f1)
-    local image_tag; if [[ "$full_image" != *":"* ]]; then image_tag="latest"; else image_tag=$(echo "$full_image" | cut -d: -f2); fi
+    local image_repo
+    image_repo=$(echo "$full_image" | cut -d: -f1)
+    local image_tag
+    if [[ "$full_image" != *":"* ]]; then
+        image_tag="latest"
+    else
+        image_tag=$(echo "$full_image" | cut -d: -f2)
+    fi
     if [[ "$image_repo" != *"/"* ]]; then image_repo="library/$image_repo"; fi
 
     echo "    🔄 正在从 Docker Hub 获取 '$full_image' 的远程 Digest..." >&2
-    local token; token=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${image_repo}:pull" | jq -r .token)
-    local digest; digest=$(curl -s --head -H "Accept: application/vnd.docker.distribution.manifest.v2+json" -H "Authorization: Bearer $token" "https://registry-1.docker.io/v2/${image_repo}/manifests/${image_tag}" | grep -i 'docker-content-digest' | awk '{print $2}' | tr -d '\r')
+    local token
+    token=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${image_repo}:pull" | jq -r .token)
+    local digest
+    digest=$(curl -s --head -H "Accept: application/vnd.docker.distribution.manifest.v2+json" -H "Authorization: Bearer $token" "https://registry-1.docker.io/v2/${image_repo}/manifests/${image_tag}" | grep -i 'docker-content-digest' | awk '{print $2}' | tr -d '\r')
     echo "$digest"
 }
 
@@ -66,7 +68,7 @@ get_local_digest() {
     docker image inspect --format='{{range .RepoDigests}}{{.}}{{end}}' "$full_image" 2>/dev/null | cut -d'@' -f2
 }
 
-# [V7 核心逻辑]
+# [V8.0 核心逻辑 - 临时文件法]
 get_latest_compatible_tag() {
     local image_repo=$1
     local target_arch=$2
@@ -77,53 +79,65 @@ get_latest_compatible_tag() {
 
     echo "    🔄 正在从 Docker Hub API 获取并处理所有标签..." >&2
 
-    local next_page_url="https://hub.docker.com/v2/repositories/${repo_name}/tags?page_size=100"
-    local all_results="[]"
+    # 创建一个临时目录来安全地处理分页数据
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
+    # 确保在脚本退出时（无论成功或失败）都清理临时目录
+    trap 'rm -rf -- "$tmp_dir"' EXIT
 
-    # 处理分页，获取所有标签数据
+    local next_page_url="https://hub.docker.com/v2/repositories/${repo_name}/tags?page_size=100"
+    local index=0
+
+    # 循环获取所有分页数据
     while [ -n "$next_page_url" ] && [ "$next_page_url" != "null" ]; do
         echo -n "        - 正 在 获 取: ${next_page_url#*//*/}" >&2
-        local page_data; page_data=$(curl -sL "$next_page_url")
+        local page_data
+        page_data=$(curl -sL "$next_page_url")
         echo " (ok)" >&2
 
-        # 检查是否获取到有效数据
+        # 健壮性检查：如果API响应中没有`.results`字段，则跳过并中止
         if ! echo "$page_data" | jq -e '.results' >/dev/null 2>&1; then
-            echo "    ⚠️ 警告: 从 API 获取数据时返回格式无效或为空。可能镜像不存在或 API 变更。" >&2
+            echo "    ⚠️ 警告: 从 API 获取数据时返回格式无效或为空。可能镜像不存在或 API 异常。" >&2
             break
         fi
 
-        all_results=$(echo "$all_results" | jq --argjson page_results "$(echo "$page_data" | jq '.results')" '. + $page_results')
+        # 将当前页的 .results 数组写入临时文件
+        echo "$page_data" | jq '.results' > "$tmp_dir/page_$index.json"
         next_page_url=$(echo "$page_data" | jq -r '.next')
+        index=$((index + 1))
     done
 
-    # 从所有结果中，筛选、排序并获取最终的标签名
-    echo "$all_results" | jq -r --arg target_arch "$target_arch" '
-        # 1. 筛选出所有架构兼容的标签
+    # 检查临时目录中是否有任何文件，避免在无文件时 glob 模式导致错误
+    if [ ! -f "$tmp_dir/page_0.json" ]; then
+        echo "" # 如果没有下载任何页面，返回空
+        return
+    fi
+    
+    # 使用 -s (slurp) 模式将所有临时文件合并成一个大数组，然后进行处理
+    jq -s 'add' "$tmp_dir"/page_*.json | jq -r --arg target_arch "$target_arch" '
+        # 筛选出所有架构兼容的标签
         map(select(.images[]?.architecture == $target_arch))
-        # 2. 按最后更新时间降序排序
+        # 按最后更新时间降序排序
         | sort_by(.last_updated) | reverse
-        # 3. 获取排序后的第一个结果的名字
+        # 获取排序后的第一个结果的名字
         | .[0].name
-        # 4. 如果没有结果，返回 null
+        # 如果没有结果，返回 null
         | select(. != null)
     '
 }
-
 
 # --- 4. 主执行逻辑 ---
 echo "🔎 正在解析 $COMPOSE_FILE..."
 IMAGE_LINE=$(grep -E '^\s*image:\s*' "$COMPOSE_FILE" | head -n 1)
 IMAGE_VALUE=$(echo "$IMAGE_LINE" | sed -E "s/^\s*image:\s*['\"]?//;s/['\"]?\s*$//")
 
-# 限制只处理 Docker Hub 的镜像
 if [[ "$IMAGE_VALUE" == *"/"* ]] && [[ ! "$IMAGE_VALUE" =~ ^([a-zA-Z0-9.-]+\/){1,}[a-zA-Z0-9.-]+(:[a-zA-Z0-9_.-]+)?$ ]]; then
     if [[ "$IMAGE_VALUE" == *".dkr.ecr."* || "$IMAGE_VALUE" == *"gcr.io"* || "$IMAGE_VALUE" == *"ghcr.io"* ]]; then
-        echo "🟡 警告: 检测到非 Docker Hub 镜像 ($IMAGE_VALUE)。此脚本的 API 查询逻辑专为 Docker Hub 设计，将跳过检查。"
+        echo "🟡 警告: 检测到非 Docker Hub 镜像 ($IMAGE_VALUE)。跳过检查。"
         echo "✅ 无需任何操作，脚本执行完毕。"
         exit 0
     fi
 fi
-
 
 IMAGE_REPO=$(echo "$IMAGE_VALUE" | cut -d: -f1)
 CURRENT_TAG=$(echo "$IMAGE_VALUE" | grep -q ':' && echo "$IMAGE_VALUE" | cut -d: -f2 || echo "latest")
@@ -175,7 +189,7 @@ else
         echo "    - 本地 Digest: $LOCAL_DIGEST"
         echo "    - 远程 Digest: $REMOTE_DIGEST"
         NEEDS_UPDATE=true
-        NEW_TAG=$CURRENT_TAG # 标签不变，但需要重新拉取
+        NEW_TAG=$CURRENT_TAG
     else
         echo "✅ 内容指纹一致，确认无需更新。"
     fi
@@ -184,9 +198,7 @@ fi
 # --- 5. 执行更新 ---
 if [ "$NEEDS_UPDATE" = true ]; then
     echo "🚀 开始执行更新流程..."
-
     echo "1/4: 正在更新 $COMPOSE_FILE..."
-    # 使用双引号以支持包含特殊字符的镜像名，并确保替换的精确性
     sed -i.bak -E "s|image:\s*['\"]?${IMAGE_VALUE}['\"]?|image: \"${IMAGE_REPO}:${NEW_TAG}\"|" "$COMPOSE_FILE"
     echo "    ✅ 文件更新成功, 已创建备份文件 $COMPOSE_FILE.bak"
 
