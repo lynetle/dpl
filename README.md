@@ -139,6 +139,6 @@ crontab -e
 
 欢迎访问本项目作者的 GitHub：
 
-👉 [tuosujie](https://github.com/tuosujie)
+👉 [lynetle](https://github.com/lynetle)
 
 如有建议或问题欢迎提 issue 或 PR！
