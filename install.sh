@@ -4,7 +4,7 @@ set -e
 
 # 设置变量：目标文件名和 GitHub 地址
 SCRIPT_NAME="pull-latest.sh"
-GITHUB_RAW_URL="https://github.makkle.com/https://raw.githubusercontent.com/tuosujie/dpl/main/${SCRIPT_NAME}"
+GITHUB_RAW_URL="https://github.makkle.com/https://raw.githubusercontent.com/lynetle/dpl/main/${SCRIPT_NAME}"
 
 # 检查 docker-compose 文件是否存在
 if [[ -f "docker-compose.yml" || -f "docker-compose.yaml" ]]; then
