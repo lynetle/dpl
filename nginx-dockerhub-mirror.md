@@ -16,7 +16,8 @@
 ## 第一步：配置 Nginx
 
 1.  在 Nginx 的配置目录（通常是 `/etc/nginx/conf.d/` 或 `/etc/nginx/sites-available/`）下创建一个新的配置文件，例如 `docker-proxy.conf`。
-2.  将以下**已脱敏**的配置内容复制到该文件中。
+2.  将以下配置内容复制到该文件中。
+3.  **请注意有两个设置域名的地方**
 
 ### Nginx 配置文件 (`docker-proxy.conf`)
 
