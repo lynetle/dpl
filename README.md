@@ -1,144 +1,57 @@
+# DPL (Docker Pull Latest) - 智能 Docker 镜像更新器
 
-# pull-latest.sh
+一个用于自动检查、更新 Docker Hub 镜像并重启关联服务的智能 Bash 脚本。它能自动发现兼容本机构架的最新版本，修改 `docker-compose.yml` 文件，并平滑地重启服务，让你的应用始终保持最新。
 
-一个用于自动拉取 Docker Hub 镜像最新版本并更新 `docker-compose.yml` 的 Bash 脚本。  
-支持镜像多架构判断、自动替换 tag、服务平滑重启，并可结合 crontab 自动定时更新。
+项目提供了**一键安装脚本**，可以自动处理环境依赖、网络配置和定时任务，实现真正的“开箱即用”。
 
 ---
 
 ## ✨ 功能特性
 
-- ✅ 自动获取镜像的最新 tag（从 Docker Hub）
-- ✅ 自动判断是否有更新，避免重复拉取
-- ✅ 自动判断镜像是否支持当前平台架构（如 amd64、arm64）
-- ✅ 自动更新 `docker-compose.yml` 或 `docker-compose.yaml` 中的镜像 tag
-- ✅ 自动执行 `docker compose up -d` 实现无缝重启
-- ✅ 可设置为定时任务，每天自动更新
+- **一键安装**：提供 `install.sh` 脚本，自动完成依赖安装、脚本下载、镜像加速配置和定时任务设置。
+- **智能版本发现**：自动从 Docker Hub API 获取时间上最新的镜像标签。
+- **架构兼容性检查**：自动筛选并选择与你服务器架构（如 `amd64`, `arm64`）兼容的镜像版本。
+- **内容更新感知**：即使标签名未变（如 `latest`），也能通过检查镜像的 Digest (内容指纹) 来发现并执行更新。
+- **代理支持**：内置代理模式（自动/强制），可配置通过反向代理访问 Docker Hub API，完美解决国内访问慢或被速率限制的问题。
+- **网络优化**：安装时可自动检测网络，并提示配置国内 Docker 镜像加速。
+- **无缝重启服务**：更新 `docker-compose.yml` 文件后，自动执行 `docker compose up -d` 以应用更新。
+- **高鲁棒性**：优化了 API 请求逻辑，修复了多个边界情况下的 bug，运行更稳定。
+- **定时自动更新**：可轻松设置为 `cron` 定时任务，实现无人值守的自动更新。
+- **自动备份**：在修改前会自动备份 `docker-compose.yml` 文件。
 
----
+## 🔧 工作原理
+
+1.  **解析配置**：读取 `docker-compose.yml` 文件中的 `image` 字段。
+2.  **获取本机信息**：确定当前服务器的 CPU 架构（如 `amd64`）。
+3.  **查询远程 API**：
+    - 访问 Docker Hub API，通过分页获取指定镜像的所有标签。
+    - （如果开启代理）所有 API 请求将通过你配置的代理服务器进行。
+4.  **筛选最新版本**：在所有标签中，筛选出与本机架构兼容、且发布时间最新的一个有效标签。
+5.  **对比版本**：
+    - 如果找到的最新标签与当前标签**不同**，则标记为需要更新。
+    - 如果标签**相同**，则进一步通过 API 获取远程镜像的 `Digest`，并与本地镜像的 `Digest` 对比。如果 `Digest` 不同，说明镜像内容已更新，同样标记为需要更新。
+6.  **执行更新**：
+    - 修改 `docker-compose.yml` 文件中的镜像版本。
+    - 拉取新的 Docker 镜像。
+    - 使用新镜像强制重新创建并启动服务。
+    - 清理旧的、无用的镜像以释放空间。
 
 ## 📦 前置要求
 
-- 已安装 [Docker](https://docs.docker.com/get-docker/) 和 [Docker Compose](https://docs.docker.com/compose/install/)
-- 当前目录下存在 `docker-compose.yml` 或 `docker-compose.yaml` 文件，且包含 `image:` 字段
-- 网络可访问 Docker Hub（如 `hub.docker.com`）
-- Bash 环境（Linux / WSL / macOS）
-- 安装 [`jq`](https://stedolan.github.io/jq/) 工具（用于解析 JSON）
-
-安装 jq（以 Ubuntu 为例）：
-
-```bash
-sudo apt update
-sudo apt install -y jq
-```
+- 操作系统：Linux (Ubuntu, Debian, CentOS 等), macOS, 或 WSL。
+- 已安装 [Docker](https://docs.docker.com/get-docker/) 和 [Docker Compose](https://docs.docker.com/compose/install/) (v1 或 v2 均可)。
+- 已安装 `jq` 和 `curl` 工具（**一键安装脚本会自动安装 `jq`**）。
+- 当前目录下存在 `docker-compose.yml` 或 `docker-compose.yaml` 文件。
+- **重要**：本脚本目前仅支持更新托管在 **Docker Hub** 上的公开镜像。
 
 ---
 
 ## 🚀 使用方法
 
-项目提供两种使用方式：**一键安装** 和 **手动安装**，任选其一。
+### ✅ 一键安装（强烈推荐）
 
----
+该方式最简单，推荐所有用户使用。它会自动处理所有环境配置。
 
-### ✅ 一键安装（推荐）
-
-适合首次部署或希望快速配置环境的用户。
-
-直接运行：
-
+**标准网络环境：**
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/lynetle/dpl/main/install.sh)
-```
-中国访问推荐：
-```bash
-bash <(curl -fsSL https://github.makkle.com/https://raw.githubusercontent.com/lynetle/dpl/main/install.sh)
-```
-
-#### 🛠️ 脚本功能
-
-`install.sh` 将自动：
-
-- 🔧 检查并安装必要依赖（如 jq）
-- 🔄 下载或更新 `pull-latest.sh` 脚本
-- 📂 初始化项目目录结构
-- 🚀 可选：设置定时执行任务
-
-#### ⚠️ 注意事项
-
-- 需要具备 `sudo` 权限
-- 适用于常见的 Linux 发行版（如 Ubuntu、Debian 等）
-- 安装过程中有交互提示，请根据实际需求操作
-
----
-
-### 🔧 手动安装
-
-如果你更希望按步骤自主操作，可参考以下流程：
-
-####  下载更新脚本
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/lynetle/dpl/main/pull-latest.sh -o pull-latest.sh
-chmod +x pull-latest.sh
-```
-中国访问推荐：
-```bash
-bash <(curl -fsSL https://github.makkle.comhttps://raw.githubusercontent.com/lynetle/dpl/main/pull-latest.sh -o pull-latest.sh
-chmod +x pull-latest.sh
-```
-
-###  执行脚本
-
-```bash
-./pull-latest.sh
-```
-
-脚本会自动：
-
-- 🚀 获取镜像最新版本
-- 🖥️ 检查是否支持本机架构
-- 📝 替换 `docker-compose.yml` 或 `docker-compose.yaml` 中的镜像 tag
-- 🔄 重启服务
-
----
-
-## ⏰ 设置定时自动更新（可选）
-
-你可以将该脚本加入系统的 `crontab`，实现每日自动检查更新。
-
-### 步骤如下：
-
-1. 打开 crontab 编辑器：
-
-```bash
-crontab -e
-```
-
-2. 添加如下定时任务（每天凌晨 3 点执行）：
-
-```
-0 3 * * * /full/path/to/pull-latest.sh >> /full/path/to/docker-update.log 2>&1
-```
-
-请将 `/full/path/to/` 替换为你脚本实际所在的路径。
-
----
-
-## 📁 文件说明
-
-| 文件名                     | 用途                                       |
-|----------------------------|--------------------------------------------|
-| `pull-latest.sh`           | 主脚本，执行自动检查、更新和重启服务       |
-| `.last_tag`                | 记录上一次使用的镜像 tag，避免重复拉取     |
-| `.last_checked_arch_tag`  | 缓存架构支持检查结果，提升后续运行速度     |
-| `docker-compose.yml.bak`  | 原 compose 文件的备份（执行前生成）        |
-
----
-
-## 📬 联系 & 反馈
-
-欢迎访问本项目作者的 GitHub：
-
-👉 [lynetle](https://github.com/lynetle)
-
-如有建议或问题欢迎提 issue 或 PR！
