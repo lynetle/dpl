@@ -12,16 +12,9 @@ COMPOSE_FILE="" # 用于存储找到的 docker-compose 文件名
 
 # --- 函数定义 ---
 
-# 函数：检查 docker-compose 文件中的镜像是否都来自 Docker Hub (使用 grep/sed，无 yq 依赖)
+# 函数：检查 docker-compose 文件中的镜像是否都来自 Docker Hub
 check_compose_images_no_yq() {
-  echo "🔎 正在检查 docker-compose 文件中的镜像来源 (使用 grep)..."
-  
-  # 1. 使用 grep 查找所有包含 'image:' 的有效行
-  #    -E 使用扩展正则, ^\s*image: 匹配行首的 'image:' (允许前面有空格)
-  #    -v '^\s*#' 排除被注释掉的行
-  # 2. 使用 sed 清理，只保留镜像名称
-  #    s/^\s*image:\s*//  -> 删除 'image:' 关键字和前后空格
-  #    s/["']//g          -> 删除可能存在的引号
+  echo "🔎 正在检查 docker-compose 文件中的镜像来源..."
   local images
   images=$(grep -E '^\s*image:' "$COMPOSE_FILE" | grep -v '^\s*#' | sed -e 's/^\s*image:\s*//' -e 's/["'\'']//g')
 
@@ -30,12 +23,8 @@ check_compose_images_no_yq() {
     return
   fi
 
-  # IFS=$'\n' ensures we loop line by line
   while IFS= read -r img; do
-    # 跳过空行
     [ -z "$img" ] && continue
-
-    # 判断逻辑：如果镜像名的第一部分(以/分割)包含'.'或':'，则为第三方或私有仓库
     local registry_part
     registry_part=$(echo "$img" | awk -F'/' '{print $1}')
 
@@ -46,14 +35,12 @@ check_compose_images_no_yq() {
       exit 1
     fi
   done <<< "$images"
-
   echo "✅ 所有镜像均来自 Docker Hub，检查通过。"
 }
 
 
 # 函数：添加 Docker 镜像源
 add_docker_mirror() {
-  # ... (此函数保持不变)
   echo "🔧 正在配置 Docker 镜像加速..."
   sudo mkdir -p /etc/docker
   if [ ! -s "$DAEMON_JSON_FILE" ]; then
@@ -90,10 +77,20 @@ else
   exit 1
 fi
 
-# 2. 安装依赖 (仅需 jq)
-echo "📦 正在安装所需依赖工具..."
-sudo apt-get update > /dev/null
-sudo apt-get install -y jq
+# 2. 检查并安装依赖 (仅需 jq)
+echo "🔎 正在检查所需依赖工具 (jq)..."
+if ! command -v jq >/dev/null 2>&1; then
+  echo "   - 依赖 'jq' 未安装，正在尝试安装..."
+  sudo apt-get update >/dev/null
+  if sudo apt-get install -y jq >/dev/null; then
+    echo "   ✅ 'jq' 安装成功。"
+  else
+    echo "   ❌ 'jq' 安装失败。请手动执行 'sudo apt-get install jq' 后重试。"
+    exit 1
+  fi
+else
+  echo "   ✅ 依赖 'jq' 已存在。"
+fi
 
 # 3. 检查 Compose 文件中的镜像来源
 check_compose_images_no_yq
@@ -128,21 +125,29 @@ fi
 chmod +x "$SCRIPT_NAME"
 echo "✅ 下载完成，已赋予执行权限：./$SCRIPT_NAME"
 
-# 7. 询问是否设置定时任务
-read -rp "🕒 是否设置每天凌晨 3 点自动运行更新脚本？[y/N] " yn_cron
-case "$yn_cron" in
-  [yY][eE][sS]|[yY])
-    CRON_CMD="0 3 * * * $(pwd)/$SCRIPT_NAME >> $(pwd)/docker-update.log 2>&1"
-    if crontab -l 2>/dev/null | grep -Fq "$SCRIPT_NAME"; then
-      echo "⚠️ 已存在包含该脚本的定时任务，跳过添加。"
-    else
+# 7. 检查并设置定时任务 (已优化流程和注释检查)
+echo "🔎 正在检查有效的定时任务设置..."
+SCRIPT_FULL_PATH="$(pwd)/$SCRIPT_NAME"
+
+# 检查crontab中是否存在【未被注释的】、针对此完整路径的任务
+# 'grep -v' 排除注释行, 'grep -Fq' 精确匹配路径
+if crontab -l 2>/dev/null | grep -v '^\s*#' | grep -Fq "$SCRIPT_FULL_PATH"; then
+  # 如果已存在一个有效的、未被注释的任务，直接告知用户并跳过
+  echo "ℹ️ 检测到已存在有效的定时任务，无需重复设置。"
+  echo "   路径: $SCRIPT_FULL_PATH"
+else
+  # 如果不存在有效任务（可能被注释了，或根本没有），才询问用户是否要添加
+  read -rp "🕒 未检测到有效的定时任务，是否设置每天凌晨 3 点自动运行更新脚本？[y/N] " yn_cron
+  case "$yn_cron" in
+    [yY][eE][sS]|[yY])
+      CRON_CMD="0 3 * * * cd $(pwd) && $SCRIPT_FULL_PATH >> $(pwd)/docker-update.log 2>&1"
       (crontab -l 2>/dev/null; echo "$CRON_CMD") | crontab -
-      echo "✅ 定时任务已添加：每天凌晨 3 点执行 $SCRIPT_NAME"
-    fi
-    ;;
-  *)
-    echo "⏭️ 已跳过定时任务配置。你可以随时通过手动执行 ./$SCRIPT_NAME 来更新 Docker 镜像。"
-    ;;
-esac
+      echo "✅ 定时任务已添加：每天凌晨 3 点在目录 $(pwd) 执行 $SCRIPT_NAME"
+      ;;
+    *)
+      echo "⏭️ 已跳过定时任务配置。你可以随时通过手动执行 ./$SCRIPT_NAME 来更新 Docker 镜像。"
+      ;;
+  esac
+fi
 
 echo "🎉 安装完成！"
