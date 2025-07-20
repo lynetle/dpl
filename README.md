@@ -55,3 +55,107 @@
 **标准网络环境：**
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/lynetle/dpl/main/install.sh)
+```
+
+**中国大陆或网络不佳环境推荐：**
+```bash
+bash <(curl -fsSL https://github.makkle.com/https://raw.githubusercontent.com/lynetle/dpl/main/install.sh)
+```
+
+**这个安装脚本会做什么？**
+
+1.  **检查环境**：确认 `docker-compose.yml` 文件是否存在。
+2.  **安装依赖**：自动使用 `apt-get` 安装 `jq`。
+3.  **检查镜像**：验证 `docker-compose.yml` 中的镜像是否来自 Docker Hub。
+4.  **配置加速**：检测 Docker Hub 连接速度，如果过慢，会**交互式地询问**是否要为你配置国内镜像加速。
+5.  **下载主脚本**：从 GitHub 下载最新的 `pull-latest.sh` 并赋予执行权限。
+6.  **设置定时任务**：**交互式地询问**是否要添加一个 `cron` 任务，以实现每天凌晨3点的自动更新。
+
+### 🔧 手动安装
+
+适合希望完全控制安装过程的高级用户。
+
+1.  **下载更新脚本**
+
+    **标准网络环境：**
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/lynetle/dpl/main/pull-latest.sh -o pull-latest.sh
+    chmod +x pull-latest.sh
+    ```
+    **中国大陆或网络不佳环境推荐：**
+    ```bash
+    curl -fsSL https://github.makkle.com/https://raw.githubusercontent.com/lynetle/dpl/main/pull-latest.sh -o pull-latest.sh
+    chmod +x pull-latest.sh
+    ```
+2.  **安装依赖**
+
+    ```bash
+    # 以 Debian/Ubuntu 为例
+    sudo apt-get update && sudo apt-get install -y jq
+    ```
+
+3.  **执行脚本**
+
+    直接运行即可开始检查和更新：
+    ```bash
+    ./pull-latest.sh
+    ```
+
+---
+
+## ⚙️ 脚本配置
+
+你可以直接编辑 `pull-latest.sh` 文件顶部的配置项来定制其行为。
+
+```bash
+# --- 1. 用户配置 ---
+COMPOSE_FILE="./docker-compose.yml"
+PROXY_MODE="auto"
+PROXY_DOMAIN="dock.makkle.com"
+```
+
+| 配置项 | 说明 |
+| :--- | :--- |
+| `COMPOSE_FILE` | 指定你的 docker-compose 文件路径。 |
+| `PROXY_MODE` | 代理模式。可选值：<br>- `auto`: 自动检测网络，如果直连 Docker Hub API 失败，则自动启用代理。<br>- `force_on`: 强制所有 API 请求通过代理。<br>- `force_off`: 强制所有 API 请求都直连，不使用代理。 |
+| `PROXY_DOMAIN` | 你的反向代理服务器域名。仅在 `PROXY_MODE` 为 `auto` 或 `force_on` 时生效。 |
+
+## 🛰️ 高级功能：配置反向代理
+
+为了彻底解决 Docker Hub 的速率限制和国内访问速度慢的问题，你可以自行搭建一个 Nginx 反向代理。本项目提供了一份经过优化的、带缓存的 Nginx 配置方案。
+
+**详细的部署指南请参考文档：[`nginx.md`](nginx.md)**
+
+配置好你自己的代理服务器后，只需在 `pull-latest.sh` 中修改 `PROXY_MODE` 和 `PROXY_DOMAIN` 即可启用。
+
+## ⏰ 设置定时自动更新
+
+你可以将该脚本加入系统的 `crontab`，实现每日自动检查更新。**（注意：一键安装脚本可自动完成此步骤）**
+
+1.  打开 crontab 编辑器：
+    ```bash
+    crontab -e
+    ```
+2.  在文件末尾添加一行（示例为每天凌晨3点执行，并将日志输出到 `docker-update.log`）：
+    ```
+    0 3 * * * /path/to/your/pull-latest.sh >> /path/to/your/docker-update.log 2>&1
+    ```
+    **请务必将 `/path/to/your/` 替换为脚本所在的绝对路径。**
+
+## 📁 文件说明
+
+| 文件名 | 用途 |
+| :--- | :--- |
+| `pull-latest.sh` | **主脚本**，负责执行所有检查、更新和重启逻辑。 |
+| `install.sh` | **一键安装脚本**，用于快速部署和配置环境。 |
+| `nginx.md` | Nginx 反向代理的详细**部署指南**。 |
+| `docker-compose.yml.bak` | 在更新前自动创建的 compose 文件**备份**。 |
+| `docker-update.log` | （可选）定时任务的**日志输出文件**。 |
+
+---
+
+## 📬 联系 & 反馈
+
+- **作者**: [lynetle](https://github.com/lynetle)
+- 欢迎通过 [GitHub Issues](https://github.com/lynetle/dpl/issues) 提出问题或建议！
+
