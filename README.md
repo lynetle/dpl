@@ -124,7 +124,9 @@ PROXY_DOMAIN="dock.makkle.com"
 
 为了彻底解决 Docker Hub 的速率限制和国内访问速度慢的问题，你可以自行搭建一个 Nginx 反向代理。本项目提供了一份经过优化的、带缓存的 Nginx 配置方案。
 
-**详细的部署指南请参考文档：[`nginx.md`](nginx.md)**
+**加速api查询请参考文档：[`nginx.md`](nginx.md)**
+
+**加速docker镜像拉取请参考文档：[`nginx-dockerhub-mirror.md`](nginx-dockerhub-mirror.md)**
 
 配置好你自己的代理服务器后，只需在 `pull-latest.sh` 中修改 `PROXY_MODE` 和 `PROXY_DOMAIN` 即可启用。
 
@@ -138,7 +140,7 @@ PROXY_DOMAIN="dock.makkle.com"
     ```
 2.  在文件末尾添加一行（示例为每天凌晨3点执行，并将日志输出到 `docker-update.log`）：
     ```
-    0 3 * * * /path/to/your/pull-latest.sh >> /path/to/your/docker-update.log 2>&1
+    0 3 * * * cd /path/to/your && /path/to/your/pull-latest.sh >> /path/to/your/docker-update.log 2>&1
     ```
     **请务必将 `/path/to/your/` 替换为脚本所在的绝对路径。**
 
@@ -148,7 +150,8 @@ PROXY_DOMAIN="dock.makkle.com"
 | :--- | :--- |
 | `pull-latest.sh` | **主脚本**，负责执行所有检查、更新和重启逻辑。 |
 | `install.sh` | **一键安装脚本**，用于快速部署和配置环境。 |
-| `nginx.md` | Nginx 反向代理的详细**部署指南**。 |
+| `nginx.md` | Nginx 反向代理dockerhubapi查询的详细**部署指南**。 |
+| `nginx-dockerhub-mirror.md` | Nginx 反向代理dockerhub镜像加速拉取的详细**部署指南**。 |
 | `docker-compose.yml.bak` | 在更新前自动创建的 compose 文件**备份**。 |
 | `docker-update.log` | （可选）定时任务的**日志输出文件**。 |
 
