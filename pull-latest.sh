@@ -26,6 +26,7 @@ PROXY_MODE="auto"
 PROXY_DOMAIN="dock.makkle.com"
 
 # --- 2. 初始化与环境检查 ---
+printf "\n=== %s ===\n" "$(date '+%Y-%m-%d %H:%M:%S')"
 echo "▶️  开始执行 Docker 镜像智能更新脚本 (v8.5 - 精确清理版)..."
 command -v docker >/dev/null 2>&1 || { echo >&2 "❌ 错误: 'docker' 命令未找到。请先安装 Docker。"; exit 1; }
 command -v curl >/dev/null 2>&1 || { echo >&2 "❌ 错误: 'curl' 命令未找到。请安装 curl。"; exit 1; }
