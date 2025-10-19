@@ -60,7 +60,8 @@ add_docker_mirror() {
   for mirror in "${DOCKER_MIRROR_URLS[@]}"; do
     # 检查当前遍历的镜像是否已经存在于 "registry-mirrors" 数组中
     # 使用 jq 的 -e 选项，如果找到匹配项，返回 0 (true)；否则返回非 0 (false)
-    if sudo jq -e --arg m "$mirror" '.["registry-mirrors"] | any(. == $m)' "$DAEMON_JSON_FILE" >/dev/null; then
+    # if sudo jq -e --arg m "$mirror" '.["registry-mirrors"] | any(. == $m)' "$DAEMON_JSON_FILE" >/dev/null; then
+    if sudo jq -e --arg m "$mirror" '(.["registry-mirrors"] // []) | any(. == $m)' "$DAEMON_JSON_FILE" >/dev/null; then
       echo "✅ 镜像源 [$mirror] 已存在，跳过。"
     else
       echo "➕ 正在添加新的镜像源: [$mirror]"
